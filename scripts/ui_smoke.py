@@ -7,10 +7,11 @@ import shutil
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILE = ROOT / ".local/ui-smoke"
+PROFILE = ROOT / ".local/ui-smoke" / uuid.uuid4().hex
 PROFILE.mkdir(parents=True, exist_ok=True)
 os.environ["APPDATA"] = str(PROFILE / "roaming")
 os.environ["LOCALAPPDATA"] = str(PROFILE / "local")

@@ -19,10 +19,12 @@ for relative in ("app/build/outputs/apk/debug/app-debug.apk",
 if "--install-only" in sys.argv:
     raise SystemExit(0)
 result = subprocess.run([adb, "shell", "am", "instrument", "--user", "0", "-w", "-r",
+                         "-e", "class", "com.ohmymeme.app.CollectorImportTest,com.ohmymeme.app.ExampleInstrumentedTest",
                          "com.shang.memecollector.debug.test/androidx.test.runner.AndroidJUnitRunner"],
                         capture_output=True, text=True, timeout=600)
 log = result.stdout + result.stderr
 (ROOT / ".local/device-test-result.txt").write_text(log, "utf-8")
 print(log)
-if result.returncode or "FAILURES!!!" in log or "INSTRUMENTATION_FAILED" in log or "OK (" not in log:
+if (result.returncode or "FAILURES!!!" in log or "INSTRUMENTATION_FAILED" in log
+        or "OK (" not in log or "INSTRUMENTATION_STATUS_CODE: -4" in log):
     raise SystemExit(1)

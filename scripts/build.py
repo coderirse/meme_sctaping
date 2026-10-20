@@ -113,9 +113,22 @@ def source_archive():
     with zipfile.ZipFile(DIST / "MemeCollector-Source-0.1.0.zip", "w", zipfile.ZIP_DEFLATED) as archive:
         for name in ("desktop", "android"):
             app = ROOT / "apps" / name
-            result = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-                                    cwd=app, capture_output=True, check=True)
-            for relative in result.stdout.decode("utf-8").split("\0"):
+            if (app / ".git").exists():
+                result = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+                                        cwd=app, capture_output=True, check=True)
+                relatives = result.stdout.decode("utf-8").split("\0")
+            else:
+                # Published source archives have no Git metadata.
+                excluded = {".git", ".gradle", ".idea", "build", "dist", "node_modules",
+                            "__pycache__", ".pytest_cache", ".ruff_cache", ".venv", ".local", "keystore"}
+                relatives = []
+                for directory, children, files in os.walk(app):
+                    children[:] = [child for child in children if child not in excluded]
+                    for filename in files:
+                        if filename in {"keystore.properties", "local.properties"} or filename.endswith((".jks", ".keystore", ".log", ".pyc")):
+                            continue
+                        relatives.append(str((Path(directory) / filename).relative_to(app)).replace("\\", "/"))
+            for relative in relatives:
                 if not relative:
                     continue
                 path = app / relative
@@ -126,7 +139,7 @@ def source_archive():
                 for path in folder.rglob("*"):
                     if path.is_file() and "__pycache__" not in path.parts:
                         archive.write(path, str(path.relative_to(ROOT)))
-        for name in ("README.md", "LICENSE", "upstream-lock.json", ".gitignore"):
+        for name in ("README.md", "LICENSE", "upstream-lock.json", ".gitignore", ".gitmodules"):
             if (ROOT / name).is_file():
                 archive.write(ROOT / name, name)
 

@@ -2,6 +2,14 @@
 
 Windows 和 Android 11+ 的 QQ / 微信表情收集工具，基于 OhMyMeme 定制。主动选择后保存原文件，保留 GIF、动态 WebP，不持续读取全部聊天。
 
+## v0.1.0 下载
+
+[版本发布页](https://github.com/coderirse/meme_sctaping/releases/tag/v0.1.0) · [安卓 APK](https://github.com/coderirse/meme_sctaping/releases/download/v0.1.0/MemeCollector-Android-0.1.0.apk) · [Windows 安装包](https://github.com/coderirse/meme_sctaping/releases/download/v0.1.0/MemeCollector-0.1.0-setup.exe) · [Windows 便携包](https://github.com/coderirse/meme_sctaping/releases/download/v0.1.0/MemeCollector-Windows-0.1.0.zip)
+
+正式版 Android 包名为 `com.shang.memecollector`，测试版为 `com.shang.memecollector.debug`。已在 vivo X100 Ultra / Android 16 上验证 QQ 收集、28 帧 GIF 原文件保存与增量去重；双端加密协议通过 USB TCP 转发完成实机往返验证。Android 11 实机、Wi-Fi 自动发现和手机微信新增收藏的完整往返仍待补测。
+
+完整源码、校验文件和更新说明见发布页及 [v0.1.0 发布说明](docs/releases/v0.1.0.md)。
+
 ## 安装与使用
 
 构建产物位于 `dist/`：
@@ -65,7 +73,19 @@ Windows 和 Android 11+ 的 QQ / 微信表情收集工具，基于 OhMyMeme 定�
 
 ## 开发与构建
 
-上游历史分别保留在 `apps/desktop/.git`、`apps/android/.git`；固定提交见 [upstream-lock.json](upstream-lock.json)。不要直接在上游最新分支上覆盖当前修改。
+主仓库管理构建脚本、文档和两个组件的固定版本。桌面、安卓子模块均从本仓库获取，分别发布在 `components/desktop`、`components/android` 分支；保留各自上游历史，原始基线见 [upstream-lock.json](upstream-lock.json)。不要直接在上游最新分支上覆盖当前修改。
+
+```powershell
+git clone --recurse-submodules https://github.com/coderirse/meme_sctaping.git
+cd meme_sctaping
+# 已经克隆但缺少组件时：
+git submodule update --init --recursive
+# 检出本次发布的完整固定版本：
+git checkout v0.1.0
+git submodule update --init --recursive
+```
+
+也可下载发布页的 `MemeCollector-Source-0.1.0.zip`；GitHub 自动生成的 Source code 压缩包不包含子模块源码。
 
 Windows 开发环境：Python 3.12、Node.js/npm；打包还需要 Visual Studio 2022 C++ Build Tools、完整 Windows SDK、CMake、Inno Setup 6。Android 需要 JDK 17+、Android SDK 36。
 
@@ -106,7 +126,16 @@ Pop-Location
 .\.venv\Scripts\python.exe scripts\ui_smoke.py
 ```
 
-`probe.py` 只输出版本、数量与图片格式等汇总，个人样本在 gitignored 的 `.local/`，不写入发布源码。安卓单元测试由构建脚本执行，连接设备测试运行 `gradlew.bat :app:connectedDebugAndroidTest`；Shizuku 实机测试需要用户先给测试版授权。
+`probe.py` 只输出版本、数量与图片格式等汇总，个人样本在 gitignored 的 `.local/`，不写入发布源码。安卓单元测试由构建脚本执行。设备与桥接验证：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\device_test.py
+.\.venv\Scripts\python.exe scripts\lan_smoke.py
+# 打开正式版的 QQ 候选列表后，验证选一个、保存原字节和增量过滤。
+.\.venv\Scripts\python.exe scripts\phone_ui_smoke.py --package com.shang.memecollector
+```
+
+`device_test.py` 保留目标应用的安装状态，避免常规 connected test 运行结束卸载应用造成 Shizuku 授权及设置丢失。`lan_smoke.py` 用临时 USB TCP 转发验证实际双端协议和字节保留，不代表已覆盖 Wi-Fi 自动发现。`phone_ui_smoke.py` 会保存实际列表中的一个表情，测试范围限定本项目正式版或测试版。
 
 ## 开源声明
 

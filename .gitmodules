@@ -1,0 +1,8 @@
+[submodule "apps/desktop"]
+	path = apps/desktop
+	url = https://github.com/coderirse/meme_sctaping.git
+	branch = components/desktop
+[submodule "apps/android"]
+	path = apps/android
+	url = https://github.com/coderirse/meme_sctaping.git
+	branch = components/android
