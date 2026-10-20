@@ -1,0 +1,12 @@
+{
+  "desktop": {
+    "url": "https://github.com/OhMyMeme/OhMyMeme.git",
+    "commit": "ee7e38b8028954a6454f03df2f7e0ba7b8f88fe7",
+    "path": "apps/desktop"
+  },
+  "android": {
+    "url": "https://github.com/OhMyMeme/OhMyMeme-Android.git",
+    "commit": "f0a4a72e6cbde8cf732919a2137783b14263cb38",
+    "path": "apps/android"
+  }
+}
