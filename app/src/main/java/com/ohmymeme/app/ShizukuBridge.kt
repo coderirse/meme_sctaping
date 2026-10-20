@@ -2,6 +2,8 @@ package com.ohmymeme.app
 
 import android.content.pm.PackageManager
 import rikka.shizuku.Shizuku
+import java.util.concurrent.FutureTask
+import java.util.concurrent.TimeUnit
 
 /**
  * Shizuku 权限三态与远程 shell 执行通道（读取手机 QQ 缓存用，参照桌面端 adb 拉取逻辑）。
@@ -37,10 +39,16 @@ object ShizukuBridge {
     /** 执行 sh -c 命令，返回退出码与 stdout 文本；Shizuku 不可用时返回 null */
     fun exec(command: String): ExecResult? {
         val process = start(arrayOf("sh", "-c", command)) ?: return null
+        val reader = FutureTask {
+            process.inputStream.use { FileUtils.readLimited(it, 4 * 1024 * 1024) }
+        }
+        Thread(reader, "collector-shell-read").apply { isDaemon = true; start() }
         return try {
             val drain = drainStderr(process)
-            val out = process.inputStream.bufferedReader().use { it.readText() }
-            val code = process.waitFor()
+            val code = waitForRemote(process, 90) ?: return null
+            val bytes = reader.get(5, TimeUnit.SECONDS)
+            if (bytes.size > 4 * 1024 * 1024) return null
+            val out = bytes.toString(Charsets.UTF_8)
             joinDrain(drain)
             ExecResult(code, out)
         } catch (e: Throwable) {
@@ -48,16 +56,22 @@ object ShizukuBridge {
             null
         } finally {
             destroy(process)
+            reader.cancel(true)
         }
     }
 
     /** 读取远程文件字节；文件不存在/无权限/进程失败返回 null */
-    fun readFile(path: String): ByteArray? {
+    fun readFile(path: String, maxBytes: Int = 20 * 1024 * 1024): ByteArray? {
         val process = start(arrayOf("cat", path)) ?: return null
+        val reader = FutureTask {
+            process.inputStream.use { FileUtils.readLimited(it, maxBytes) }
+        }
+        Thread(reader, "collector-file-read").apply { isDaemon = true; start() }
         return try {
             val drain = drainStderr(process)
-            val bytes = process.inputStream.use { it.readBytes() }
-            val code = process.waitFor()
+            val code = waitForRemote(process, 30) ?: return null
+            val bytes = reader.get(5, TimeUnit.SECONDS)
+            if (bytes.size > maxBytes) return null
             joinDrain(drain)
             if (code != 0) null else bytes
         } catch (e: Throwable) {
@@ -65,6 +79,18 @@ object ShizukuBridge {
             null
         } finally {
             destroy(process)
+            reader.cancel(true)
+        }
+    }
+
+    /** 远程 Process 的 exitValue 不遵循 Java 默认超时轮询约定，单独等待阻塞 API。 */
+    internal fun waitForRemote(process: Process, seconds: Long): Int? {
+        val waiter = FutureTask { process.waitFor() }
+        Thread(waiter, "collector-process-wait").apply { isDaemon = true; start() }
+        return try {
+            waiter.get(seconds, TimeUnit.SECONDS)
+        } finally {
+            waiter.cancel(true)
         }
     }
 

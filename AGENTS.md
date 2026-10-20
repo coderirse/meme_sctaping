@@ -1,3 +1,15 @@
+# MemeCollector 定制约定（优先于下方上游现状描述）
+
+- 工作区根目录 upstream-lock.json 固定原始提交；保留 GPL-3.0 署名。
+- 默认本地收集，cloud_direct/cloud_thumb_auto_push 为 false；不自动升级到上游安装包。
+- 桌面新增 collector.py/CollectorDialog.vue：独立异步任务、随机候选标识、惰性微信下载、仅勾选项入库、增量索引、取消与重试。候选 API 不暴露 CDN URL 或密钥。
+- inspect_image 完整解码受支持动图；_do_import 按实际格式命名，校验原文件哈希，临时文件原子落盘，数据库失败时清理本次文件。collector 显式 preserve_original=True。
+- 安卓 minSdk=30，release applicationId=com.shang.memecollector；代码 namespace 保留 com.ohmymeme.app，manifest 使用完整类名。debug 使用标准签名，release 使用本地独立密钥，不需要私有签名仓库。
+- 安卓 QQ 使用 find -exec stat 批量读取大小/mtime/路径，避免逐文件启动 shell；候选默认只显示未保存项，带惰性动图预览；历史指纹包含路径/大小/mtime，仅成功/重复且在库时隐藏；ImportResult 分开统计重复/不支持/超限/失败。
+- 安卓微信经桌面收集和 LAN 拉取；不声称手机可独立读取微信私有数据。
+- Shizuku 远程 Process 不可使用 Java 默认 waitFor(timeout) 轮询；使用独立 FutureTask 包装阻塞 waitFor，回归见 RemoteProcessWaitTest。
+- Android 11 不可直接使用 InputStream.readNBytes；FileUtils.readLimited 提供有界兼容读取。Android 14+ 磁贴使用 PendingIntent。
+
 # OhMyMeme Android — AI Agent Guide
 
 ## 项目概述

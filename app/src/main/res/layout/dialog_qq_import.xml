@@ -2,11 +2,19 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
-    android:layout_height="420dp"
+    android:layout_height="480dp"
     android:orientation="vertical"
     android:paddingStart="16dp"
     android:paddingTop="8dp"
     android:paddingEnd="16dp">
+
+    <CheckBox
+        android:id="@+id/qq_only_new"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:checked="true"
+        android:text="只看未保存的表情"
+        android:textColor="@color/fg" />
 
     <EditText
         android:id="@+id/qq_search"

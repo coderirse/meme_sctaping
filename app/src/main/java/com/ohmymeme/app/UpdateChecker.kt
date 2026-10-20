@@ -61,6 +61,10 @@ object UpdateChecker {
 
     /** 阻塞调用，须在后台线程执行 */
     fun checkLatest(currentVersion: String): UpdateInfo {
+        return UpdateInfo(currentVersion, "", false, "定制版请使用项目提供的安装包升级，避免被上游版本覆盖")
+    }
+
+    private fun checkUpstream(currentVersion: String): UpdateInfo {
         val current = parseVersion(currentVersion)
         android.util.Log.d(TAG, "checkLatest current=$currentVersion")
         val parsed = fetchLatest()

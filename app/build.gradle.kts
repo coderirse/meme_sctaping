@@ -1,6 +1,6 @@
 import java.util.Properties
 
-val appVersionName = "0.5.6"
+val appVersionName = "0.1.0"
 
 val keystoreProps = Properties().apply {
     val f = rootProject.file("keystore.properties")
@@ -20,7 +20,7 @@ android {
     }
 
     signingConfigs {
-        create("shared") {
+        create("collector") {
             storeFile = signProp("KEYSTORE_PATH")?.let { rootProject.file(it) }
             storePassword = signProp("KEYSTORE_STORE_PASSWORD")
             keyAlias = signProp("KEYSTORE_KEY_ALIAS")
@@ -29,8 +29,8 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.ohmymeme.app"
-        minSdk = 28
+        applicationId = "com.shang.memecollector"
+        minSdk = 30
         targetSdk = 36
         versionCode = 13
         versionName = appVersionName
@@ -40,7 +40,7 @@ android {
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("shared")
+            applicationIdSuffix = ".debug"
         }
         release {
             isMinifyEnabled = false
@@ -48,7 +48,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("shared")
+            signingConfig = signingConfigs.getByName("collector")
         }
     }
     compileOptions {
@@ -67,7 +67,7 @@ androidComponents {
                 val dir = apkDir.get().asFile
                 val apk = dir.listFiles { f -> f.isFile && f.extension == "apk" }
                     ?.firstOrNull() ?: return@doLast
-                val target = dir.resolve("OhMyMeme-Android-$appVersionName.apk")
+                val target = dir.resolve("MemeCollector-Android-$appVersionName.apk")
                 if (!apk.name.equals(target.name)) {
                     apk.renameTo(target)
                 }

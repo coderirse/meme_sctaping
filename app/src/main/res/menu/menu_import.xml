@@ -9,4 +9,5 @@
     <item
         android:id="@+id/act_import_qq"
         android:title="@string/import_menu_qq" />
+    <item android:id="@+id/act_import_wechat" android:title="微信表情（经电脑）" />
 </menu>

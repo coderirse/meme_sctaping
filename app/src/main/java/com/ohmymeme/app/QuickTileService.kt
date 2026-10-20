@@ -1,6 +1,8 @@
 package com.ohmymeme.app
 
 import android.content.Intent
+import android.app.PendingIntent
+import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 
@@ -26,10 +28,17 @@ class QuickTileService : TileService() {
 
     private fun launchApp() {
         try {
-            startActivity(
-                Intent(this, MainActivity::class.java)
+            val intent = Intent(this, MainActivity::class.java)
+                    .putExtra("collector_qq", true)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-            )
+            if (Build.VERSION.SDK_INT >= 34) {
+                startActivityAndCollapse(PendingIntent.getActivity(
+                    this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                ))
+            } else {
+                @Suppress("DEPRECATION")
+                startActivityAndCollapse(intent)
+            }
         } catch (e: Exception) {
             android.util.Log.w(TAG, "launch failed: $e")
         }

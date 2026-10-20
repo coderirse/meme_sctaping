@@ -27,6 +27,12 @@ import android.widget.PopupMenu
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.CheckBox
+import android.widget.CheckedTextView
+import android.graphics.ImageDecoder
+import android.graphics.drawable.Animatable
+import java.nio.ByteBuffer
+import java.util.concurrent.atomic.AtomicBoolean
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.GridLayoutManager
@@ -53,6 +59,8 @@ class MainActivity : AppCompatActivity() {
     private val selectedIds = mutableSetOf<Long>()
     private var latestReloadId = 0L
     private var qqExportEntries: List<QqCacheImporter.Entry> = emptyList()
+    private var qqScanActive = false
+    private val qqCancel = AtomicBoolean(false)
     private var sidebarSwipeActive = false
     private var sidebarSwipeClosing = false
     private var sidebarSwipeConsumeUp = false
@@ -81,7 +89,13 @@ class MainActivity : AppCompatActivity() {
         }
     private val setupGuideLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == RESULT_OK) reloadData()
+            if (result.resultCode == RESULT_OK) {
+                reloadData()
+                if (intent.getBooleanExtra("collector_qq", false)) {
+                    intent.removeExtra("collector_qq")
+                    startQqImport()
+                }
+            }
         }
     private val settingsLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -119,8 +133,11 @@ class MainActivity : AppCompatActivity() {
         ensureFirstRunSetup()
         autoSyncIfConfigured()
         startCloudDirect()
-        autoUpdateIfDue()
         handleIncomingIntent(intent)
+        if (intent.getBooleanExtra("collector_qq", false) && !StoragePaths.isFirstRun(this)) {
+            intent.removeExtra("collector_qq")
+            startQqImport()
+        }
         executor.execute { StoragePaths.ensureNomedia(applicationContext) }
     }
 
@@ -206,6 +223,10 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIncomingIntent(intent)
+        if (intent.getBooleanExtra("collector_qq", false) && !StoragePaths.isFirstRun(this)) {
+            intent.removeExtra("collector_qq")
+            startQqImport()
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -252,10 +273,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupLogo() {
         val logo = findViewById<TextView>(R.id.tv_logo)
-        val spannable = SpannableString("OhMyMeme")
+        val spannable = SpannableString("表情收集")
         spannable.setSpan(
             ForegroundColorSpan(getColor(R.color.accent)),
-            4, 8, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+            2, 4, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
         )
         logo.text = spannable
         // 点击 logo 回到主页：清空搜索/标签/分组过滤（对齐桌面端 logo 回主页）
@@ -1362,6 +1383,12 @@ class MainActivity : AppCompatActivity() {
                 R.id.act_import_files -> pickImages()
                 R.id.act_import_album -> pickAlbumImages()
                 R.id.act_import_qq -> startQqImport()
+                R.id.act_import_wechat -> AlertDialog.Builder(this)
+                    .setTitle("微信表情经电脑收集")
+                    .setMessage("在微信中添加喜欢的表情，随后在电脑微信打开表情面板。\n\n电脑端 MemeCollector → 导入 → 收集微信表情 → 勾选保存。\n\n手机和电脑连接同一 Wi-Fi，在设置的局域网互联中配对并拉取表情。此功能需要电脑在线。")
+                    .setPositiveButton("打开互传设置") { _, _ ->
+                        settingsLauncher.launch(Intent(this, SettingsActivity::class.java))
+                    }.setNegativeButton("知道了", null).show()
             }
             true
         }
@@ -1462,10 +1489,7 @@ class MainActivity : AppCompatActivity() {
         executor.execute {
             val result = MemeImporter.importUris(this, uris)
             runOnUiThread {
-                var msg = getString(R.string.import_done, result.imported)
-                if (result.rejected > 0) msg += getString(R.string.import_rejected, result.rejected)
-                if (result.errors.isNotEmpty()) msg += getString(R.string.import_errors, result.errors.size)
-                toast(msg)
+                showCollectionResult(result)
                 reloadData()
             }
         }
@@ -1474,7 +1498,15 @@ class MainActivity : AppCompatActivity() {
     /** 从手机QQ缓存导入：Shizuku 可用性 → 授权三态 → 扫描 → 多选弹窗（导入/转存） */
     private fun startQqImport() {
         if (!ShizukuBridge.available()) {
-            toast(getString(R.string.qq_not_available))
+            AlertDialog.Builder(this)
+                .setTitle("首次配置 QQ 表情收集")
+                .setMessage("1. 安装并打开 Shizuku\n2. 在开发者选项启用无线调试并完成配对\n3. 启动 Shizuku，回来授予本工具权限\n\n手机重启后可能需要重新启动服务。开发者模式不等于 Root。")
+                .setPositiveButton("打开 Shizuku") { _, _ ->
+                    val launch = packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")
+                    if (launch != null) startActivity(launch)
+                    else openBrowser("https://shizuku.rikka.app/zh-hans/guide/setup/")
+                }
+                .setNegativeButton(R.string.cancel, null).show()
             return
         }
         if (!ShizukuBridge.hasPermission()) {
@@ -1490,47 +1522,96 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun beginQqScan() {
+        if (qqScanActive) return
+        qqScanActive = true
         toast(getString(R.string.qq_scanning))
         executor.execute {
-            val entries = try {
-                QqCacheImporter.scan()
+            val result = try {
+                QqCacheImporter.scanDetailed()
             } catch (e: Exception) {
                 android.util.Log.w(TAG, "qq cache scan failed: $e")
-                emptyList()
+                QqCacheImporter.ScanResult(emptyList(), "扫描失败，请重新授权后重试")
             }
+            val collected = result.entries.filter { QqCacheImporter.isCollected(this, it) }.map { it.path }.toSet()
             runOnUiThread {
-                if (entries.isEmpty()) {
+                qqScanActive = false
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (result.error.isNotEmpty()) {
+                    AlertDialog.Builder(this).setMessage(result.error).setPositiveButton("知道了", null).show()
+                } else if (result.entries.isEmpty()) {
                     toast(getString(R.string.qq_import_empty))
                 } else {
-                    showQqPickDialog(entries)
+                    showQqPickDialog(result.entries, collected)
                 }
             }
         }
     }
 
-    private fun showQqPickDialog(entries: List<QqCacheImporter.Entry>) {
+    private fun showQqPickDialog(entries: List<QqCacheImporter.Entry>, collected: Set<String>) {
         val view = layoutInflater.inflate(R.layout.dialog_qq_import, null)
         val listDirs = view.findViewById<ListView>(R.id.qq_dirs)
         val listFiles = view.findViewById<ListView>(R.id.qq_files)
         val search = view.findViewById<EditText>(R.id.qq_search)
         val selCount = view.findViewById<TextView>(R.id.qq_sel_count)
         val selAll = view.findViewById<TextView>(R.id.qq_sel_all)
+        val onlyNew = view.findViewById<CheckBox>(R.id.qq_only_new)
+        onlyNew.isChecked = ConfigStore.get(this).optBoolean("collector_only_new", true)
 
         val grouped = linkedMapOf<String, MutableList<QqCacheImporter.Entry>>()
         for (e in entries) grouped.getOrPut(QqCacheImporter.dirLabel(e)) { mutableListOf() }.add(e)
         val dirNames = grouped.keys.toList()
         val checked = HashSet<String>()
-        var currentDir = dirNames.first()
+        val rememberedDir = ConfigStore.get(this).optString("collector_qq_dir", "")
+        var currentDir = rememberedDir.takeIf { it in dirNames } ?: dirNames.first()
         var query = ""
         var fileItems: List<QqCacheImporter.Entry> = emptyList()
 
         val dirAdapter = ArrayAdapter(this, android.R.layout.simple_list_item_activated_1, mutableListOf<String>())
-        val fileAdapter = ArrayAdapter(this, android.R.layout.simple_list_item_multiple_choice, mutableListOf<String>())
+        val previews = android.util.LruCache<String, android.graphics.drawable.Drawable>(24)
+        val previewPending = mutableSetOf<String>()
+        var dialogClosed = false
+        val fileAdapter = object : ArrayAdapter<String>(this, android.R.layout.simple_list_item_multiple_choice, mutableListOf<String>()) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val row = super.getView(position, convertView, parent) as CheckedTextView
+                val entry = fileItems[position]
+                row.tag = entry.path
+                row.textSize = 11f
+                row.maxLines = 2
+                row.setPadding(8, 8, 8, 8)
+                val cached = previews.get(entry.path)
+                row.setCompoundDrawables(cached, null, null, null)
+                if (cached is Animatable) cached.start()
+                if (cached == null && entry.size <= MemeImporter.MAX_BYTES && previewPending.add(entry.path)) {
+                    executor.execute {
+                        val drawable = try {
+                            val bytes = ShizukuBridge.readFile(entry.path, MemeImporter.MAX_BYTES)
+                            if (bytes == null) null else ImageDecoder.decodeDrawable(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { decoder, info, _ ->
+                                val ratio = 96.0 / maxOf(info.size.width, info.size.height).coerceAtLeast(1)
+                                decoder.setTargetSize(maxOf(1, (info.size.width * ratio).toInt()), maxOf(1, (info.size.height * ratio).toInt()))
+                            }
+                        } catch (_: Exception) { null }
+                        runOnUiThread {
+                            previewPending.remove(entry.path)
+                            if (!dialogClosed && drawable != null) {
+                                val side = (48 * resources.displayMetrics.density).toInt()
+                                drawable.setBounds(0, 0, side, side)
+                                previews.put(entry.path, drawable)
+                                if (row.tag == entry.path) {
+                                    row.setCompoundDrawables(drawable, null, null, null)
+                                    if (drawable is Animatable) drawable.start()
+                                }
+                            }
+                        }
+                    }
+                }
+                return row
+            }
+        }
         listDirs.adapter = dirAdapter
         listFiles.adapter = fileAdapter
 
         fun updateCounters() {
-            selCount.text = getString(R.string.qq_sel_count, checked.size)
+            selCount.text = "已选 ${checked.size} / 候选 ${fileItems.size}"
             selAll.text =
                 if (checked.size < entries.size) getString(R.string.qq_select_all)
                 else getString(R.string.qq_clear_sel)
@@ -1549,6 +1630,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 entries.filter { it.path.substringAfterLast('/').contains(query, ignoreCase = true) }
             }
+            if (onlyNew.isChecked) fileItems = fileItems.filter { it.path !in collected }
             fileAdapter.clear()
             fileAdapter.addAll(fileItems.map {
                 if (query.isEmpty()) QqCacheImporter.fileNameLabel(it)
@@ -1562,6 +1644,9 @@ class MainActivity : AppCompatActivity() {
 
         listDirs.onItemClickListener = AdapterView.OnItemClickListener { _, _, pos, _ ->
             currentDir = dirNames[pos]
+            val cfg = ConfigStore.get(this)
+            cfg.put("collector_qq_dir", currentDir)
+            ConfigStore.save(this)
             renderFiles()
         }
         listFiles.onItemClickListener = AdapterView.OnItemClickListener { _, _, pos, _ ->
@@ -1580,20 +1665,27 @@ class MainActivity : AppCompatActivity() {
             }
         })
         selAll.setOnClickListener {
-            if (checked.size < entries.size) {
+            if (fileItems.any { it.path !in checked }) {
                 checked.clear()
-                entries.forEach { checked.add(it.path) }
+                fileItems.forEach { checked.add(it.path) }
             } else {
                 checked.clear()
             }
             renderFiles()
         }
+        onlyNew.setOnCheckedChangeListener { _, enabled ->
+            val cfg = ConfigStore.get(this)
+            cfg.put("collector_only_new", enabled)
+            ConfigStore.save(this)
+            checked.clear()
+            renderFiles()
+        }
 
         updateCounters()
-        listDirs.setItemChecked(0, true)
+        listDirs.setItemChecked(dirNames.indexOf(currentDir), true)
         renderFiles()
 
-        AlertDialog.Builder(this)
+        val picker = AlertDialog.Builder(this)
             .setTitle(R.string.qq_import_title)
             .setView(view)
             .setPositiveButton(getString(R.string.qq_import_confirm)) { _, _ ->
@@ -1608,32 +1700,60 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
+        picker.setOnDismissListener {
+            dialogClosed = true
+            previews.snapshot().values.forEach { if (it is Animatable) it.stop() }
+            previews.evictAll()
+        }
     }
 
     private fun runQqImport(entries: List<QqCacheImporter.Entry>) {
-        val ui = SyncProgressDialog.show(this, getString(R.string.qq_import_running))
+        qqCancel.set(false)
+        val progressText = TextView(this).apply { setPadding(32, 24, 32, 24); text = "正在保存原文件…" }
+        val progressDialog = AlertDialog.Builder(this).setTitle("保存 QQ 表情").setView(progressText)
+            .setCancelable(false).setNegativeButton("取消") { _, _ -> qqCancel.set(true) }.show()
         syncExecutor.execute {
             val result = try {
-                QqCacheImporter.importSelected(this, entries) { bytes, name ->
-                    ui.progress.report(bytes, name)
-                }
+                QqCacheImporter.importSelected(this, entries, report = { _, name ->
+                    runOnUiThread { progressText.text = "正在保存：$name" }
+                }, cancelled = { qqCancel.get() })
             } catch (e: Exception) {
                 android.util.Log.e(TAG, "qq import failed: $e")
                 runOnUiThread {
-                    ui.dismiss()
+                    progressDialog.dismiss()
                     toast(getString(R.string.qq_import_failed))
                 }
                 return@execute
             }
             runOnUiThread {
-                ui.dismiss()
-                var msg = getString(R.string.import_done, result.imported)
-                if (result.rejected > 0) msg += getString(R.string.import_rejected, result.rejected)
-                if (result.errors.isNotEmpty()) msg += getString(R.string.import_errors, result.errors.size)
-                toast(msg)
+                progressDialog.dismiss()
+                showCollectionResult(result)
                 reloadData()
             }
         }
+    }
+
+    /** 普通分享导入和 QQ 收集使用相同的保存结果。 */
+    private fun showCollectionResult(result: MemeImporter.ImportResult) {
+        if (isFinishing || isDestroyed) return
+        var message = "成功 ${result.imported}，重复 ${result.duplicates}，不支持 ${result.unsupported}，超限 ${result.rejected}，失败 ${result.errors.size}"
+        if (result.cancelled) message = "已取消；$message"
+        message += "\n\n保存位置：${StoragePaths.describeDataLocation(this)}/cache"
+        if (result.errors.isNotEmpty()) message += "\n未保存：" + result.errors.take(10).joinToString("、")
+        AlertDialog.Builder(this).setTitle("保存结果").setMessage(message)
+            .setPositiveButton("知道了", null)
+            .setNeutralButton("打开目录") { _, _ ->
+                val uri = StoragePaths.cacheDir(this).uri
+                if (uri != null) {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "vnd.android.document/directory")
+                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                    } catch (_: Exception) { toast("文件管理器不支持此目录，请从已授权位置打开") }
+                } else {
+                    toast("当前为应用私有目录，可在设置中选择共享保存位置并迁移")
+                    settingsLauncher.launch(Intent(this, SettingsActivity::class.java))
+                }
+            }.show()
     }
 
     /** 转存到…：每次经系统目录选择器让用户指定转存位置，选定后写入所选目录 */

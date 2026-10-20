@@ -38,7 +38,37 @@ object QqCacheImporter {
     /** 转存单文件大小上限（整文件读入内存，防止超大文件 OOM） */
     const val EXPORT_MAX_BYTES = 64L * 1024 * 1024
 
-    data class Entry(val path: String, val size: Long, val root: String)
+    data class Entry(val path: String, val size: Long, val root: String, val modified: Long = 0)
+
+    data class ScanResult(val entries: List<Entry>, val error: String = "")
+
+    /** 区分权限失效、目录不可访问与空缓存。 */
+    fun scanDetailed(): ScanResult {
+        if (!ShizukuBridge.available()) return ScanResult(emptyList(), "Shizuku 服务未启动，请先完成无线调试配对")
+        if (!ShizukuBridge.hasPermission()) return ScanResult(emptyList(), "Shizuku 授权已失效，请重新授权")
+        val access = ShizukuBridge.exec("test -r '/storage/emulated/0/Android/data/$QQ_PKG'")
+        if (access == null || access.code != 0) {
+            return ScanResult(emptyList(), "QQ 缓存目录不可访问，请检查系统限制和 Shizuku 权限")
+        }
+        return ScanResult(scan())
+    }
+
+    /** 只标记成功保存的来源；本地记录被删除后会重新成为新增候选。 */
+    fun isCollected(context: Context, entry: Entry): Boolean {
+        val hash = context.getSharedPreferences("collector_history", Context.MODE_PRIVATE)
+            .getString(fingerprint(entry), null) ?: return false
+        return MemeDb.get(context).getByHash(hash) != null
+    }
+
+    private fun fingerprint(entry: Entry): String = FileUtils.sha256(
+        "${entry.path}\n${entry.size}\n${entry.modified}".byteInputStream()
+    )
+
+    private fun markCollected(context: Context, entry: Entry, bytes: ByteArray) {
+        val hash = FileUtils.sha256(bytes.inputStream())
+        context.getSharedPreferences("collector_history", Context.MODE_PRIVATE)
+            .edit().putString(fingerprint(entry), hash).apply()
+    }
 
     /** 扫描全部候选根，返回去重排序后的文件列表 */
     fun scan(): List<Entry> {
@@ -90,11 +120,9 @@ object QqCacheImporter {
             .toList()
     }
 
-    /** find 全递归列文件，逐个 stat 输出「size<TAB>path」行 */
+    /** 批量 stat 输出大小/mtime/路径，避免每张图片启动两次 shell 子进程。 */
     internal fun listCommand(root: String): String =
-        "find ${shellQuote(root)} -type f 2>/dev/null | " +
-            "while IFS= read -r f; do " +
-            "printf '%s\\t%s\\n' \"\$(stat -c %s \"\$f\" 2>/dev/null)\" \"\$f\"; done"
+        "find ${shellQuote(root)} -type f -exec stat -c ${shellQuote("%s\t%Y\t%n")} {} +"
 
     /** 解析 listCommand 输出，跳过 stat 失败、相对路径与非图片扩展名 */
     internal fun parseListOutput(out: String, root: String): List<Entry> {
@@ -104,9 +132,12 @@ object QqCacheImporter {
             val tab = line.indexOf('\t')
             if (tab <= 0 || tab == line.length - 1) continue
             val size = line.substring(0, tab).toLongOrNull() ?: continue
-            val path = line.substring(tab + 1)
+            val rest = line.substring(tab + 1)
+            val secondTab = rest.indexOf('\t')
+            val modified = if (secondTab >= 0) rest.substring(0, secondTab).toLongOrNull() ?: 0 else 0
+            val path = if (secondTab >= 0) rest.substring(secondTab + 1) else rest
             if (!path.startsWith("/") || isSkippedFile(path)) continue
-            entries.add(Entry(path, size, root))
+            entries.add(Entry(path, size, root, modified))
         }
         return entries
     }
@@ -154,12 +185,16 @@ object QqCacheImporter {
     fun importSelected(
         context: Context,
         entries: List<Entry>,
-        report: (bytes: Long, name: String) -> Unit
+        report: (bytes: Long, name: String) -> Unit,
+        cancelled: () -> Boolean = { false }
     ): MemeImporter.ImportResult {
         var imported = 0
         var rejected = 0
+        var duplicates = 0
+        var unsupported = 0
         val errors = mutableListOf<String>()
         for (entry in entries) {
+            if (cancelled()) break
             val name = entry.path.substringAfterLast('/')
             try {
                 if (entry.size > MemeImporter.MAX_BYTES) {
@@ -167,17 +202,17 @@ object QqCacheImporter {
                     report(0, name)
                     continue
                 }
-                val bytes = ShizukuBridge.readFile(entry.path)
+                val bytes = ShizukuBridge.readFile(entry.path, MemeImporter.MAX_BYTES)
                 if (bytes == null) {
                     errors.add(name)
                     report(entry.size, name)
                     continue
                 }
                 when (MemeImporter.importBytes(context, bytes, name)) {
-                    MemeImporter.ImportOutcome.IMPORTED -> imported++
-                    MemeImporter.ImportOutcome.DUPLICATE,
-                    MemeImporter.ImportOutcome.OVER_LIMIT,
-                    MemeImporter.ImportOutcome.INVALID -> rejected++
+                    MemeImporter.ImportOutcome.IMPORTED -> { imported++; markCollected(context, entry, bytes) }
+                    MemeImporter.ImportOutcome.DUPLICATE -> { duplicates++; markCollected(context, entry, bytes) }
+                    MemeImporter.ImportOutcome.OVER_LIMIT -> rejected++
+                    MemeImporter.ImportOutcome.INVALID -> unsupported++
                     MemeImporter.ImportOutcome.FAILED -> errors.add(name)
                 }
                 report(bytes.size.toLong(), name)
@@ -187,7 +222,7 @@ object QqCacheImporter {
             }
         }
         Log.d(TAG, "import finished, imported=$imported rejected=$rejected errors=${errors.size}")
-        return MemeImporter.ImportResult(imported, rejected, errors)
+        return MemeImporter.ImportResult(imported, rejected, errors, duplicates, unsupported, cancelled())
     }
 
     /** 转存所选文件到 SAF 目录（按魔数补正扩展名），返回 Pair<成功, 失败> */
@@ -209,13 +244,22 @@ object QqCacheImporter {
                     report(0, name)
                     continue
                 }
-                val bytes = ShizukuBridge.readFile(entry.path)
+                val bytes = ShizukuBridge.readFile(entry.path, EXPORT_MAX_BYTES.toInt())
                 if (bytes == null || bytes.isEmpty()) {
                     failed++
                     report(0, name)
                     continue
                 }
-                val outName = exportName(name, bytes)
+                if (!MemeImporter.isValidImageContent(bytes)) {
+                    failed++
+                    report(0, name)
+                    continue
+                }
+                val outName = FileUtils.sha256(bytes.inputStream()).take(16) + FileUtils.detectExt(bytes)
+                if (tree.findFile(outName) != null) {
+                    report(bytes.size.toLong(), outName)
+                    continue
+                }
                 val outFile = tree.createFile(exportMime(outName), outName)
                 val stream = outFile?.let { context.contentResolver.openOutputStream(it.uri) }
                 if (stream == null) {
@@ -223,7 +267,14 @@ object QqCacheImporter {
                     report(0, name)
                     continue
                 }
-                stream.use { it.write(bytes) }
+                try {
+                    stream.use { it.write(bytes) }
+                    val hash = context.contentResolver.openInputStream(outFile!!.uri)?.use(FileUtils::sha256)
+                    if (hash != FileUtils.sha256(bytes.inputStream())) throw java.io.IOException("写入校验失败")
+                } catch (error: Exception) {
+                    outFile?.delete()
+                    throw error
+                }
                 ok++
                 report(bytes.size.toLong(), outName)
             } catch (e: Exception) {

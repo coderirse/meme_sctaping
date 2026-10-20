@@ -14,23 +14,28 @@ object MemeImporter {
 
     enum class ImportOutcome { IMPORTED, DUPLICATE, OVER_LIMIT, INVALID, FAILED }
 
-    data class ImportResult(val imported: Int, val rejected: Int, val errors: List<String>)
+    data class ImportResult(
+        val imported: Int, val rejected: Int, val errors: List<String>,
+        val duplicates: Int = 0, val unsupported: Int = 0, val cancelled: Boolean = false
+    )
 
     fun importUris(context: Context, uris: List<Uri>): ImportResult {
         var imported = 0
         var rejected = 0
+        var duplicates = 0
+        var unsupported = 0
         val errors = mutableListOf<String>()
         for (uri in uris) {
             val originalName = queryDisplayName(context, uri) ?: "未命名"
             try {
-                val srcExt = detectExtFromUri(context, uri)
-                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    ?: continue
-                when (importBytes(context, bytes, originalName, srcExt)) {
+                val bytes = context.contentResolver.openInputStream(uri)?.use {
+                    FileUtils.readLimited(it, MAX_BYTES)
+                } ?: throw java.io.IOException("无法读取文件")
+                when (importBytes(context, bytes, originalName)) {
                     ImportOutcome.IMPORTED -> imported++
-                    ImportOutcome.DUPLICATE,
-                    ImportOutcome.OVER_LIMIT,
-                    ImportOutcome.INVALID -> rejected++
+                    ImportOutcome.DUPLICATE -> duplicates++
+                    ImportOutcome.OVER_LIMIT -> rejected++
+                    ImportOutcome.INVALID -> unsupported++
                     ImportOutcome.FAILED -> errors.add(originalName)
                 }
             } catch (e: Exception) {
@@ -39,13 +44,14 @@ object MemeImporter {
             }
         }
         android.util.Log.d(TAG, "import finished, imported=$imported rejected=$rejected errors=${errors.size}")
-        return ImportResult(imported, rejected, errors)
+        return ImportResult(imported, rejected, errors, duplicates, unsupported)
     }
 
     /**
      * 把内存字节按哈希去重后入库（LAN 推送/接收复用）。
      * 隐写 GIF 还原、可解码校验、大小/分辨率上限均在此处执行，与桌面端一致。
      */
+    @Synchronized
     fun importBytes(
         context: Context,
         bytes: ByteArray,
@@ -54,10 +60,13 @@ object MemeImporter {
     ): ImportOutcome {
         val db = MemeDb.get(context)
         val cacheDir = StoragePaths.cacheDir(context)
-        val ext = srcExt ?: detectExt(bytes) ?: ".png"
+        if (bytes.size > MAX_BYTES) return ImportOutcome.OVER_LIMIT
+        val ext = detectExt(bytes) ?: return ImportOutcome.INVALID
+        if (ext !in setOf(".png", ".jpg", ".gif", ".webp")) return ImportOutcome.INVALID
 
         // 隐写 GIF：解码还原原图后只导入还原结果（fromStego=1），GIF 本身不入库，与桌面端一致
-        val decoded = if (ext == ".gif" && GifStego.hasStego(bytes)) {
+        val decoded = if (ConfigStore.get(context).optBoolean("import_decode_stego", false) &&
+            ext == ".gif" && GifStego.hasStego(bytes)) {
             GifStego.decode(bytes, AndroidGifDecoder::webpToRgba)
         } else null
 
@@ -92,10 +101,13 @@ object MemeImporter {
 
         val fhash = FileUtils.sha256(java.io.ByteArrayInputStream(payload))
         if (db.getByHash(fhash) != null) return ImportOutcome.DUPLICATE
-        val mime = "image/${realExt.substring(1)}"
+        val mime = if (realExt == ".jpg") "image/jpeg" else "image/${realExt.substring(1)}"
         val dst = cacheDir.createFile("${fhash.substring(0, 16)}$realExt", mime)
-        dst.writeBytes(payload)
-        db.addMeme(
+        try {
+            dst.writeBytes(payload)
+            val writtenHash = dst.openInputStream().use(FileUtils::sha256)
+            if (writtenHash != fhash) throw java.io.IOException("文件写入校验失败")
+            db.addMeme(
             filename = dst.name,
             fileHash = fhash,
             width = dims.first,
@@ -104,7 +116,12 @@ object MemeImporter {
             mimeType = mime,
             originalName = originalName.substringBeforeLast('.'),
             fromStego = fromStego
-        )
+            )
+        } catch (error: Exception) {
+            dst.delete()
+            android.util.Log.w(TAG, "保存失败，已清理不完整文件", error)
+            return ImportOutcome.FAILED
+        }
         android.util.Log.d(TAG, "imported ${dst.name}")
         return ImportOutcome.IMPORTED
     }

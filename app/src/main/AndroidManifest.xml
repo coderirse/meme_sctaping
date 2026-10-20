@@ -19,7 +19,7 @@
         android:theme="@style/Theme.OhMyMeme">
 
         <activity
-            android:name=".MainActivity"
+            android:name="com.ohmymeme.app.MainActivity"
             android:exported="true"
             android:launchMode="singleTop">
             <intent-filter>
@@ -39,15 +39,15 @@
         </activity>
 
         <activity
-            android:name=".SettingsActivity"
+            android:name="com.ohmymeme.app.SettingsActivity"
             android:exported="false" />
 
         <activity
-            android:name=".SetupGuideActivity"
+            android:name="com.ohmymeme.app.SetupGuideActivity"
             android:exported="false" />
 
         <service
-            android:name=".QuickTileService"
+            android:name="com.ohmymeme.app.QuickTileService"
             android:exported="true"
             android:icon="@drawable/ic_qs_tile"
             android:label="@string/tile_label"

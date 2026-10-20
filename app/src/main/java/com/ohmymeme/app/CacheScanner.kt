@@ -29,7 +29,12 @@ object CacheScanner {
             }
             if (db.getByHash(fhash) != null) return@forEach
             val dims = decodeBounds(f)
-            val mime = if (ext.isNotEmpty()) "image/${ext.substring(1)}" else "image/png"
+            if (dims.first <= 0 || dims.second <= 0) return@forEach
+            val actualExt = f.openInputStream().use { stream ->
+                FileUtils.detectExt(FileUtils.readLimited(stream, 16))
+            }
+            if (actualExt !in setOf(".png", ".jpg", ".gif", ".webp")) return@forEach
+            val mime = if (actualExt == ".jpg") "image/jpeg" else "image/${actualExt.substring(1)}"
             val oname = f.name.substringBeforeLast('.')
             db.addMeme(
                 filename = f.name,

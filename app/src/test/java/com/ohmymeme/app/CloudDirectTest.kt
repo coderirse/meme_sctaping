@@ -140,8 +140,8 @@ class CloudDirectTest {
     }
 
     @Test
-    fun configDefaultsEnableCloudDirectAndThumbAutoPush() {
-        assertEquals(true, ConfigStore.DEFAULTS["cloud_direct"])
-        assertEquals(true, ConfigStore.DEFAULTS["cloud_thumb_auto_push"])
+    fun configDefaultsKeepCollectionLocal() {
+        assertEquals(false, ConfigStore.DEFAULTS["cloud_direct"])
+        assertEquals(false, ConfigStore.DEFAULTS["cloud_thumb_auto_push"])
     }
 }

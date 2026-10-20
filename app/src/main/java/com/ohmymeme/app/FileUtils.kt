@@ -6,6 +6,21 @@ import java.security.MessageDigest
 
 object FileUtils {
 
+    /** 有界读取，兼容 Android 11，超限时仅返回上限加一字节供调用方拒绝。 */
+    fun readLimited(input: InputStream, maximum: Int): ByteArray {
+        val output = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(65536)
+        var remaining = maximum + 1
+        while (remaining > 0) {
+            val count = input.read(buffer, 0, minOf(buffer.size, remaining))
+            if (count < 0) break
+            if (count == 0) continue
+            output.write(buffer, 0, count)
+            remaining -= count
+        }
+        return output.toByteArray()
+    }
+
     val ALLOWED_EXT = setOf(".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp")
 
     private val MAGIC_TYPES = listOf(

@@ -101,7 +101,7 @@ class QqCacheImporterTest {
     fun listCommandQuotesRoot() {
         val cmd = QqCacheImporter.listCommand("/a/b'c")
         assertTrue(cmd.contains("find '/a/b'\\''c' -type f"))
-        assertTrue(cmd.contains("stat -c %s"))
+        assertTrue(cmd.contains("stat -c '%s\t%Y\t%n' {} +"))
     }
 
     @Test
@@ -165,5 +165,20 @@ class QqCacheImporterTest {
     fun fileNameLabelShowsNameAndSize() {
         val entry = QqCacheImporter.Entry("$root/sub/x.gif", 1536L, root)
         assertEquals("x.gif（1 KB）", QqCacheImporter.fileNameLabel(entry))
+    }
+
+    @Test
+    fun parseListingWithModificationTime() {
+        val entries = QqCacheImporter.parseListOutput("2048\t1729000000\t$root/a.gif\n", root)
+        assertEquals(1, entries.size)
+        assertEquals(1729000000L, entries[0].modified)
+        assertEquals("$root/a.gif", entries[0].path)
+    }
+
+    @Test
+    fun boundedReadPreservesOriginalBytes() {
+        val data = ByteArray(500) { (it % 255).toByte() }
+        assertEquals(65, FileUtils.readLimited(data.inputStream(), 64).size)
+        assertTrue(data.contentEquals(FileUtils.readLimited(data.inputStream(), 500)))
     }
 }
