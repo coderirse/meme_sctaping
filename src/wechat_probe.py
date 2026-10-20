@@ -278,6 +278,7 @@ def _find_wechat_root():
     if not profile:
         return ""
     candidates = [
+        Path(profile) / "xwechat_files",
         Path(profile) / "Documents" / "xwechat_files",
         Path(profile) / "Documents" / "WeChat Files",
     ]

@@ -40,10 +40,10 @@ SHA_D = "dd" * 32
 # ─── config 默认值 ───
 
 
-def test_cloud_direct_default_true(tmp_path):
+def test_cloud_direct_defaults_to_local(tmp_path):
     cfg = Config(tmp_path / "config.json")
-    assert cfg.get("cloud_direct") is True
-    assert cfg.get("cloud_thumb_auto_push") is True
+    assert cfg.get("cloud_direct") is False
+    assert cfg.get("cloud_thumb_auto_push") is False
     cfg.update_from_dict({"cloud_direct": False})
     assert cfg.get("cloud_direct") is False
     cfg.update_from_dict({"cloud_thumb_auto_push": False})
@@ -260,6 +260,7 @@ def test_prefetch_retries_failed_once(sync_env, monkeypatch):
 
 def test_push_thumbs_diff_upload(sync_env):
     sync_env.cfg.set("cloud_direct", True)
+    sync_env.cfg.set("cloud_thumb_auto_push", True)
     thumb_dir = sync_env.data_dir / "thumbnails"
     (thumb_dir / f"{SHA_A}.webp").write_bytes(b"RIFF0000WEBPnew")
     (thumb_dir / f"{SHA_B}.webp").write_bytes(b"RIFF0000WEBPexist")
@@ -285,6 +286,7 @@ def test_push_thumbs_off_when_cloud_direct_disabled(sync_env):
 
 def test_push_thumbs_upload_failure_does_not_fail_push(sync_env):
     sync_env.cfg.set("cloud_direct", True)
+    sync_env.cfg.set("cloud_thumb_auto_push", True)
     thumb_dir = sync_env.data_dir / "thumbnails"
     (thumb_dir / f"{SHA_A}.webp").write_bytes(b"RIFF0000WEBPnew")
     sync_env.bk.upload_raises.add(SHA_A + ".webp")
@@ -313,6 +315,7 @@ def test_push_deletes_remote_thumb_on_delete_remote(sync_env):
 
 def test_auto_push_thumbs_diff_upload(sync_env):
     sync_env.cfg.set("cloud_direct", True)
+    sync_env.cfg.set("cloud_thumb_auto_push", True)
     thumb_dir = sync_env.data_dir / "thumbnails"
     (thumb_dir / f"{SHA_A}.webp").write_bytes(b"RIFF0000WEBPnew")
     (thumb_dir / f"{SHA_B}.webp").write_bytes(b"RIFF0000WEBPexist")
@@ -725,6 +728,8 @@ def test_run_auto_sync_cloud_hook(js, monkeypatch):
 
     js.cfg.set("sync_auto_sync", False)
     js.cfg.set("sync_auto_fetch_index", False)
+    js.cfg.set("cloud_direct", True)
+    js.cfg.set("cloud_thumb_auto_push", True)
     calls = []
     monkeypatch.setattr(
         webui_module,

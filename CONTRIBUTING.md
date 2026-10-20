@@ -1,3 +1,12 @@
+# MemeCollector 构建覆盖说明
+
+从工作区根目录使用 `.venv/Scripts/python.exe scripts/build.py desktop` 或 `android`。
+桌面构建包含本机编译的微信 helper、实际 SHA-256 校验值和 Inno Setup 用户级安装包。
+安卓 applicationId 为 `com.shang.memecollector`，minSdk 30，debug 使用独立 `.debug` 包名及标准调试签名。
+release 使用本机生成的 `keystore/memecollector-release.jks` 和 gitignored 的 `keystore.properties`，不需要上游私有仓库。
+不得提交签名密码或 keystore；备份两者以便后续同签名升级。
+默认不检查/安装上游更新，避免覆盖定制版。
+
 # 贡献指南
 
 面向开发者的环境搭建、代码规范、测试与构建说明。用户文档见 [README.md](README.md)，AI 编码助手的完整项目上下文见 [AGENTS.md](AGENTS.md)。

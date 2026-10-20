@@ -45,6 +45,9 @@ async function poll() {
     finalMsg.value = '导入完成，共导入 ' + (s.imported || 0) + ' 个表情'
     if (s.rejected) finalMsg.value += '，跳过 ' + s.rejected + ' 个超限文件'
     if (s.skipped_dup) finalMsg.value += '，' + s.skipped_dup + ' 个已存在（重复）'
+    if (s.unsupported) finalMsg.value += '，' + s.unsupported + ' 个格式不支持或损坏'
+    const failures = (s.errors?.length || 0) - (s.unsupported || 0)
+    if (failures > 0) finalMsg.value += '，' + failures + ' 个保存失败'
     showToast('导入完成')
     emit('imported')
   } else if (s.status === 'cancelled') {

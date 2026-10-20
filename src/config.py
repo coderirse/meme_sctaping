@@ -9,7 +9,7 @@ from pathlib import Path
 from . import __version__
 from .crypto_util import decrypt_data, encrypt_data
 
-APP_NAME = "OhMyMeme"
+APP_NAME = "MemeCollector"
 
 # 当前配置文件版本（与软件版本同步，用于数据迁移）
 _CONFIG_VERSION = __version__
@@ -103,8 +103,8 @@ class Config:
         "sync_threads": 3,  # 同步并发线程数（1-8）
         "manifest_include_tags": True,  # 将标签写入 meme-index.json 清单
         "manifest_include_favorites": True,  # 将收藏夹写入 meme-index.json 清单
-        "cloud_direct": True,  # 云端直接使用（缺失表情点击下载；默认开启）
-        "cloud_thumb_auto_push": True,  # 启动时静默检测云端缺失缩略图并后台上传
+        "cloud_direct": False,  # 默认使用本地表情库
+        "cloud_thumb_auto_push": False,  # 云同步由用户主动开启
         "show_upload_progress": True,  # 上传时显示进度条
         "show_upload_done": True,  # 上传完毕显示提示
         "show_download_progress": True,  # 下载时显示进度条

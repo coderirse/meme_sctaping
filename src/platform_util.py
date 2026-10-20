@@ -7,7 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-APP_NAME = "OhMyMeme"
+APP_NAME = "MemeCollector"
 
 _single_instance_handle = None
 

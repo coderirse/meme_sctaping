@@ -1,29 +1,29 @@
 ; OhMyMeme Windows Installer (Inno Setup)
 ; 编译: iscc windows.iss
 
-#define MyAppName "OhMyMeme"
+#define MyAppName "MemeCollector"
 #define MyAppVersion "0.1.0"
-#define MyAppPublisher "OhMyMeme"
+#define MyAppPublisher "MemeCollector contributors / OhMyMeme contributors"
 #define MyAppURL "https://github.com/OhMyMeme/OhMyMeme"
-#define MyAppExeName "OhMyMeme.exe"
+#define MyAppExeName "MemeCollector.exe"
 #define SourceDir "..\..\dist\src.dist"
 
 [Setup]
-AppId={{B8F4A3D2-1C5E-4A7B-9D6F-8E2C3A1B5D7F}
+AppId={{CD617A0B-7DE6-4F77-BE12-42463483D331}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
-DefaultDirName={autopf}\{#MyAppName}
+DefaultDirName={localappdata}\Programs\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=..\..\dist
-OutputBaseFilename=OhMyMeme-{#MyAppVersion}-setup
+OutputBaseFilename=MemeCollector-{#MyAppVersion}-setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=admin
+PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 DisableStartupPrompt=yes
 CloseApplications=yes
@@ -54,4 +54,4 @@ Name: "{group}\卸载 {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: ""
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "运行 {#MyAppName}"; Flags: postinstall nowait
+Filename: "{app}\{#MyAppExeName}"; Description: "运行 {#MyAppName}"; Flags: postinstall nowait skipifsilent

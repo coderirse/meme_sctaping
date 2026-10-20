@@ -24,7 +24,7 @@ def fake_fcntl(monkeypatch, tmp_path):
 
 def test_posix_lock_file_created_and_held(fake_fcntl, tmp_path):
     assert platform_util.acquire_single_instance() is True
-    assert (tmp_path / "ohmymeme-1234.lock").exists()
+    assert (tmp_path / "memecollector-1234.lock").exists()
     _, operation = fake_fcntl.calls[-1]
     assert operation == fake_fcntl.LOCK_EX | fake_fcntl.LOCK_NB
 

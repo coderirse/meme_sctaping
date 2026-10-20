@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { api } from '../utils/api'
+import CollectorDialog from './CollectorDialog.vue'
 
 const emit = defineEmits<{
   imported: []
@@ -11,6 +12,12 @@ const emit = defineEmits<{
 
 const visible = ref(false)
 const pending = ref(false)
+const collector = ref<InstanceType<typeof CollectorDialog> | null>(null)
+
+function collect(source: string) {
+  close()
+  collector.value?.open(source)
+}
 
 function open() {
   visible.value = true
@@ -107,6 +114,8 @@ defineExpose({ open, close })
   <div v-if="visible" class="import-overlay" @click.self="close">
     <div class="import-box">
       <div class="import-title">选择导入方式</div>
+      <button class="btn btn-primary btn-block" @click="collect('qq')">收集 QQ 表情</button>
+      <button class="btn btn-primary btn-block" @click="collect('wechat')">收集微信表情</button>
       <button class="btn btn-primary btn-block" :disabled="pending" @click="importLocal">本地导入</button>
       <button class="btn btn-primary btn-block" :disabled="pending" @click="importFolder">导入文件夹</button>
       <button class="btn btn-primary btn-block" :disabled="pending" @click="importClipboard">从剪贴板导入</button>
@@ -117,6 +126,7 @@ defineExpose({ open, close })
       <button class="btn btn-ghost btn-sm" @click="close">取消</button>
     </div>
   </div>
+  <CollectorDialog ref="collector" @saved="emit('imported')" />
 </template>
 
 <style scoped>

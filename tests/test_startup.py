@@ -595,8 +595,8 @@ def test_cloud_thumb_auto_push_settings_contract():
     from src.config import Config
     from src.webui import HTML_DIR, SettingsApi
 
-    assert Config.DEFAULTS.get("cloud_direct") is True
-    assert Config.DEFAULTS.get("cloud_thumb_auto_push") is True
+    assert Config.DEFAULTS.get("cloud_direct") is False
+    assert Config.DEFAULTS.get("cloud_thumb_auto_push") is False
     settings_html = (HTML_DIR / "settings.html").read_text(encoding="utf-8")
     assert 'id="s-cloud-thumb-push"' in settings_html
     settings_js = (HTML_DIR / "settings.js").read_text(encoding="utf-8")
@@ -605,8 +605,8 @@ def test_cloud_thumb_auto_push_settings_contract():
     src = inspect.getsource(SettingsApi.get_settings)
     assert '"cloud_thumb_auto_push"' in src
     reset_src = inspect.getsource(SettingsApi.reset_settings)
-    assert '"cloud_thumb_auto_push": True' in reset_src
-    assert '"cloud_direct": True' in reset_src
+    assert '"cloud_thumb_auto_push": False' in reset_src
+    assert '"cloud_direct": False' in reset_src
 
 
 def test_disable_auto_hide_settings_contract():

@@ -29,7 +29,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_DIR = PROJECT_ROOT / "src"
 BUILD_DIR = PROJECT_ROOT / "dist"
-APP_NAME = "OhMyMeme"
+APP_NAME = "MemeCollector"
 
 # 裁剪版 ffmpeg（TG 导入 webm->webp 用，仅 Windows 打包内置）
 FFMPEG_DEST = (
@@ -516,7 +516,7 @@ def verify_keyfinder_bundle():
             errors.append(L("verify_run_error", e))
 
         company = read_pe_version_strings(helper).get("CompanyName", "")
-        if company != APP_NAME:
+        if company != "OhMyMeme":
             errors.append(L("verify_no_version", company or "(空)"))
         else:
             print(L("verify_version_ok", company))

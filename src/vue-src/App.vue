@@ -1256,8 +1256,7 @@ onUnmounted(() => {
     setTimeout(runBackground, 300)
   }
   // 每日更新检测（完整弹窗 + 下载安装，与原始实现一致）
-  await checkUpdateAndPrompt()
-  updateInterval = setInterval(checkUpdateAndPrompt, 24 * 60 * 60 * 1000)
+  // 定制版通过本项目构建升级，避免被上游安装包覆盖。
 })()
 </script>
 

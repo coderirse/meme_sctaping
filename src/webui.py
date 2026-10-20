@@ -809,6 +809,42 @@ class JsApi:
         self._drag_origin = None
         self._drag_last_move = 0.0
 
+    # 主窗口采集入口不再要求进入设置页。
+    def collector_environment(self, source, root=""):
+        return self._webui._collector.environment(source, root)
+
+    # 手动选择来源数据目录。
+    def collector_pick_root(self, source):
+        paths = self._dialog(webview.FOLDER_DIALOG)
+        return self.collector_environment(source, paths[0]) if paths else None
+
+    # 主动扫描，不在后台持续抓取聊天。
+    def collector_scan(self, source, root, account):
+        return self._webui._collector.scan(source, root, account)
+
+    # 返回当前任务及候选列表。
+    def collector_status(self):
+        return self._webui._collector.snapshot()
+
+    # 仅保存用户勾选的候选。
+    def collector_save(self, session, tokens):
+        return self._webui._collector.save(session, tokens)
+
+    # 取消任务，保留已成功保存的表情。
+    def collector_cancel(self):
+        return self._webui._collector.cancel()
+
+    # 用户主动重试失败的下载。
+    def collector_retry(self, token):
+        return self._webui._collector.retry(token)
+
+    # 在资源管理器中打开实际保存位置。
+    def collector_open_storage(self):
+        if os.name == "nt":
+            os.startfile(str(get_config().cache_dir))
+            return True
+        return False
+
     def _dialog(self, kind, **kw):
         """主窗口上下文打开文件对话框（owner 为主窗口，无需焦点恢复）"""
         win = webview.windows[0] if webview.windows else None
@@ -1511,7 +1547,7 @@ class JsApi:
     def check_update(self, debug=False, force=False) -> dict:
         from . import __version__ as cur_ver
 
-        info = updater.check_latest_cached(force=bool(debug) or bool(force))
+        info = {"has_update": False, "error": "定制版请使用项目安装包升级"}
         info["current"] = cur_ver
         if debug or self._webui._update_debug:
             info["has_update"] = True
@@ -3044,8 +3080,8 @@ class SettingsApi:
             "import_no_limit": False,
             "manifest_include_tags": True,
             "manifest_include_favorites": True,
-            "cloud_direct": True,
-            "cloud_thumb_auto_push": True,
+            "cloud_direct": False,
+            "cloud_thumb_auto_push": False,
             "window_resize_enabled": False,
         }
 
@@ -3612,7 +3648,7 @@ class SettingsApi:
     def check_update(self, debug=False, force=False) -> dict:
         from . import __version__ as cur_ver
 
-        info = updater.check_latest_cached(force=bool(debug) or bool(force))
+        info = {"has_update": False, "error": "定制版请使用项目安装包升级"}
         info["current"] = cur_ver
         if debug or self._webui._update_debug:
             info["has_update"] = True
@@ -3866,6 +3902,9 @@ def _import_job_worker(webui, files, names, make_collection, folder_name, my_tok
         imported = len(ids)
         rejected = r.get("rejected", 0)
         skipped_dup = r.get("skipped_dup", 0)
+        _set_import_job_current(
+            my_token, unsupported=r.get("unsupported", 0), errors=r.get("errors", [])
+        )
         with _IMPORT_JOB_LOCK:
             was_cancel = _IMPORT_JOB_CANCEL
             is_current = _IMPORT_JOB_STATE.get("token") == my_token
@@ -4362,6 +4401,9 @@ class WebUI:
         self._on_hotkey_change_cb = None
         self._update_debug = update_debug
         self._silent_start = silent_start
+        from .collector import Collector
+
+        self._collector = Collector(self)
 
     def _init_lan(self):
         from . import lan
@@ -4732,7 +4774,12 @@ class WebUI:
         return ""
 
     def _do_import(
-        self, file_paths, names=None, progress_cb=None, allow_overlimit=False
+        self,
+        file_paths,
+        names=None,
+        progress_cb=None,
+        allow_overlimit=False,
+        preserve_original=False,
     ):
         import shutil
 
@@ -4746,6 +4793,8 @@ class WebUI:
         total = len(file_paths)
         done = 0
         stop_import = False
+        errors = []
+        unsupported = 0
         for i, src in enumerate(file_paths):
             try:
                 base_name = (
@@ -4755,7 +4804,7 @@ class WebUI:
                 )
                 # 隐写 GIF 无论开关与否都只入库解码还原的原图（开关仅控制复制输出）
                 restored = None
-                if _detect_image_ext(src) == ".gif":
+                if not preserve_original and _detect_image_ext(src) == ".gif":
                     restored = _try_decode_stego(src)
                 if restored:
                     items = [(restored, base_name, None, 1)]
@@ -4779,8 +4828,17 @@ class WebUI:
                             "import rejected (over limit): %s", os.path.basename(path)
                         )
                         continue
+                    from .collector import inspect_image
+
+                    try:
+                        info = inspect_image(path)
+                    except Exception:
+                        unsupported += 1
+                        errors.append({"name": oname, "error": "格式不支持或文件损坏"})
+                        continue
+                    w, h = info["width"], info["height"]
                     fhash = _file_sha256(path)
-                    ext = _detect_image_ext(path) or os.path.splitext(path)[1] or ".png"
+                    ext = info["ext"]
                     # 感知哈希计算较重（解码+DCT），放锁外避免持锁阻塞其他导入
                     src_phash = _perceptual_hash_path(path)
                     # 去重检查 + 落盘 + 入库 在同一临界区：并发导入同图时不产生重复记录
@@ -4789,19 +4847,38 @@ class WebUI:
                             skipped_dup += 1
                             continue
                         dst = cache_dir / f"{fhash[:16]}{ext}"
-                        shutil.copy2(path, dst)
-                        db.add_meme(
-                            filename=dst.name,
-                            file_hash=fhash,
-                            width=w,
-                            height=h,
-                            file_size=fsize,
-                            mime_type=f"image/{ext[1:]}" if ext else "image/png",
-                            original_name=oname,
-                            stego_of_hash=stego_of_hash,
-                            from_stego=from_stego,
-                            perceptual_hash=src_phash,
-                        )
+                        cache_dir.mkdir(parents=True, exist_ok=True)
+                        import uuid
+
+                        partial = cache_dir / ("." + uuid.uuid4().hex + ".part")
+                        existed = dst.exists()
+                        try:
+                            shutil.copyfile(path, partial)
+                            if _file_sha256(partial) != fhash:
+                                raise OSError("原文件在复制期间发生变化")
+                            os.replace(partial, dst)
+                            db.add_meme(
+                                filename=dst.name,
+                                file_hash=fhash,
+                                width=w,
+                                height=h,
+                                file_size=fsize,
+                                mime_type=(
+                                    "image/jpeg"
+                                    if ext == ".jpg"
+                                    else f"image/{ext[1:]}"
+                                ),
+                                original_name=oname,
+                                stego_of_hash=stego_of_hash,
+                                from_stego=from_stego,
+                                perceptual_hash=src_phash,
+                            )
+                        except Exception:
+                            if not existed:
+                                dst.unlink(missing_ok=True)
+                            raise
+                        finally:
+                            partial.unlink(missing_ok=True)
                         row = db.get_by_hash(fhash)
                         if row:
                             imported_ids.append(row["id"])
@@ -4813,6 +4890,7 @@ class WebUI:
                         pass
             except Exception as e:
                 logger.error(f"import {src}: {e}")
+                errors.append({"name": os.path.basename(src), "error": str(e)})
             finally:
                 # 每个源文件无论 导入/去重跳过/拒绝/异常 都推进进度并检查取消
                 done += 1
@@ -4827,7 +4905,13 @@ class WebUI:
         if imported:
             build_manifest()
         logger.info(f"导入完成: {imported} 个")
-        return {"ids": imported_ids, "rejected": rejected, "skipped_dup": skipped_dup}
+        return {
+            "ids": imported_ids,
+            "rejected": rejected,
+            "skipped_dup": skipped_dup,
+            "unsupported": unsupported,
+            "errors": errors,
+        }
 
     def _import_with_similar_decision(self, path, oname=""):
         """单图导入决策：哈希命中提示已存在；内容近似转相似（URL 拖放与文件上传复用）"""
@@ -5040,6 +5124,17 @@ class WebUI:
                                 bottle.response.status = 502
                                 return ""
             return _contributors_svg()
+
+        @app.route("/api/collector/<session>/<token>")
+        def serve_collector(session, token):
+            path = self._collector.preview(session, token)
+            if not path:
+                bottle.response.status = 404
+                return ""
+            bottle.response.set_header("Cache-Control", "no-store")
+            return bottle.static_file(
+                os.path.basename(path), root=os.path.dirname(path)
+            )
 
         @app.route("/api/thumb/<sha256>")
         def serve_thumb(sha256):
@@ -5281,7 +5376,7 @@ class WebUI:
         wy = self._cfg.get("window_y", -1)
         width, height = self._resolve_window_size()
         self._window = webview.create_window(
-            "OhMyMeme",
+            "MemeCollector",
             url,
             js_api=self._api,
             width=width,
@@ -5335,7 +5430,7 @@ class WebUI:
                 except Exception:
                     sx = sy = None
             self._settings_window = webview.create_window(
-                "设置 - OhMyMeme",
+                "设置 - MemeCollector",
                 settings_url,
                 js_api=self._settings_api,
                 width=sw,

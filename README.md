@@ -1,3 +1,11 @@
+# MemeCollector 定制版说明
+
+本目录基于 OhMyMeme 固定提交定制，保留上游历史和 GPL-3.0 许可证。
+优先支持 QQ/微信的主动表情收集和 GIF/动态 WebP 原文件保存，默认关闭云端自动功能。
+安装、构建和验证结果见[主工程 README](https://github.com/coderirse/meme_sctaping/blob/main/README.md)与[验证记录](https://github.com/coderirse/meme_sctaping/blob/main/docs/verification.md)。
+当前组件发布在主工程的 `components/desktop` 分支，原始上游保留为 `upstream`。
+[v0.1.0 下载](https://github.com/coderirse/meme_sctaping/releases/tag/v0.1.0)：提供 APK、Windows 安装包、完整源码与 SHA-256 校验。
+
 # OhMyMeme
 
 轻量化跨平台表情包管理系统 — 突破表情包上限，快捷键呼出、搜索即复制。
